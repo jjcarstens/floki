@@ -22,6 +22,6 @@ defmodule Floki.IdsSeeder do
   end
 
   def handle_call(:ids, _from, state) do
-    {:reply, state}
+    {:reply, state, state}
   end
 end
