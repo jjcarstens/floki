@@ -1,16 +1,16 @@
 defmodule Floki.IdsSeeder do
   use GenServer
 
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, [], name: __MODULE__)
+  def start_link(default \\ []) do
+    GenServer.start_link(__MODULE__, default)
   end
 
-  def seed do
-    GenServer.call(__MODULE__, :seed)
+  def seed(pid) do
+    GenServer.call(pid, :seed)
   end
 
-  def ids do
-    GenServer.call(__MODULE__, :ids)
+  def ids(pid) do
+    GenServer.call(pid, :ids)
   end
 
   ## GenServer API
@@ -18,10 +18,10 @@ defmodule Floki.IdsSeeder do
   def handle_call(:seed, _from, state) do
     new_id = :crypto.strong_rand_bytes(8) |> Base.encode64
 
-    {:reply, new_id, [new_id|state]}
+    {:reply, new_id, [new_id | state]}
   end
 
   def handle_call(:ids, _from, state) do
-    {:reply, state, state}
+    {:reply, Enum.reverse(state), state}
   end
 end

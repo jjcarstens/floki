@@ -1,14 +1,14 @@
 defmodule Floki.HTMLTree do
   defstruct tree: %{}, root_id: ""
 
-  alias Floki.{HTMLNode, HTMLTree, TextNode}
+  alias Floki.{HTMLNode, HTMLTree, TextNode, IdsSeeder}
 
   defmodule Stack do
     defstruct parent_node_id: nil, children: []
   end
 
-  def parse(html_tree_as_tuple, ids_seeder) do
-    root_id = ids_seeder.seed()
+  def parse(html_tree_as_tuple, ids_seeder_pid) do
+    root_id = IdsSeeder.seed(ids_seeder_pid)
 
     {tag, attrs, children} = html_tree_as_tuple
 
@@ -20,13 +20,13 @@ defmodule Floki.HTMLTree do
       }
     }
 
-    parse_tree(tree, children, root_id, [], ids_seeder)
+    parse_tree(tree, children, root_id, [], ids_seeder_pid)
   end
 
   defp parse_tree(tree, [], _, [], _), do: tree
-  defp parse_tree(tree, [text | children], parent_id, stack, ids_seeder) when is_binary(text) do
+  defp parse_tree(tree, [text | children], parent_id, stack, ids_seeder_pid) when is_binary(text) do
     previous = tree.tree
-    new_id = ids_seeder.seed()
+    new_id = IdsSeeder.seed(ids_seeder_pid)
     new_node = %TextNode{content: text,
                          floki_id: new_id,
                          floki_parent_id: parent_id}
@@ -40,11 +40,11 @@ defmodule Floki.HTMLTree do
       |> Map.put(new_id, new_node)
       |> Map.put(parent_id, updated_parent)
 
-    parse_tree(%{tree | tree: newer}, children, parent_id, stack, ids_seeder)
+    parse_tree(%{tree | tree: newer}, children, parent_id, stack, ids_seeder_pid)
   end
-  defp parse_tree(tree, [{tag, attrs, child_children} | children], parent_id, stack, ids_seeder) do
+  defp parse_tree(tree, [{tag, attrs, child_children} | children], parent_id, stack, ids_seeder_pid) do
     previous = tree.tree
-    new_id = ids_seeder.seed()
+    new_id = IdsSeeder.seed(ids_seeder_pid)
     new_node = %HTMLNode{type: tag,
                          attributes: attrs,
                          floki_id: new_id,
@@ -61,12 +61,12 @@ defmodule Floki.HTMLTree do
 
     s_item = %Stack{parent_node_id: parent_id, children: children}
 
-    parse_tree(%{tree | tree: newer}, child_children, new_id, [s_item|stack], ids_seeder)
+    parse_tree(%{tree | tree: newer}, child_children, new_id, [s_item|stack], ids_seeder_pid)
   end
-  defp parse_tree(tree, [_other | children], parent_id, stack, ids_seeder) do
-    parse_tree(tree, children, parent_id, stack, ids_seeder)
+  defp parse_tree(tree, [_other | children], parent_id, stack, ids_seeder_pid) do
+    parse_tree(tree, children, parent_id, stack, ids_seeder_pid)
   end
-  defp parse_tree(tree, [], _, [stack_h|stack], ids_seeder) do
-    parse_tree(tree, stack_h.children, stack_h.parent_node_id, stack, ids_seeder)
+  defp parse_tree(tree, [], _, [stack_h|stack], ids_seeder_pid) do
+    parse_tree(tree, stack_h.children, stack_h.parent_node_id, stack, ids_seeder_pid)
   end
 end
