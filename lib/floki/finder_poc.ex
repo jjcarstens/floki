@@ -1,5 +1,5 @@
 defmodule Floki.FinderPoc do
-  alias Floki.{Selector, SelectorParser, SelectorTokenizer}
+  alias Floki.{Combinator, Selector, SelectorParser, SelectorTokenizer}
   alias Floki.{IdsSeeder, HTMLTree, HTMLNode, HTMLText}
 
   def find(html_tree, selector_as_string) when is_binary(selector_as_string) do
@@ -21,8 +21,8 @@ defmodule Floki.FinderPoc do
     GenServer.stop(pid)
 
     ids
-    |> Enum.map(fn(id) -> Map.get(html_tree.tree, id) end)
-    |> Enum.filter(fn(html_node) -> Selector.match?(html_node, selector) end)
+    |> get_nodes(html_tree.tree)
+    |> Enum.flat_map(fn(html_node) -> get_matches(html_tree.tree, html_node, selector) end)
     |> Enum.map(fn(html_node) -> HTMLNode.as_tuple(html_tree, html_node) end)
   end
 
@@ -34,5 +34,50 @@ defmodule Floki.FinderPoc do
 
       SelectorParser.parse(tokens)
     end)
+  end
+
+  defp get_nodes(ids, tree) do
+    Enum.map(ids, fn(id) -> Map.get(tree, id) end)
+  end
+
+  defp get_matches(_tree, html_node, selector = %Selector{combinator: nil}) do
+    if Selector.match?(html_node, selector) do
+      [html_node]
+    else
+      []
+    end
+  end
+
+  # This needs to be recursive taking the html_node as the base
+  defp get_matches(tree, html_node, selector = %Selector{combinator: combinator}) do
+    if Selector.match?(html_node, selector) do
+      traverse_with(combinator, tree, [html_node])
+    else
+      []
+    end
+  end
+
+  # When stack is empty, and we have acc, we should ask if there is any other combinator
+  # in combinator.selector.combinator.
+  # If so, we should search that too
+  # defp traverse_with(combinator, tree, parent_node, stack, acc) do
+  #  []
+  # end
+  defp traverse_with(_, _, []), do: []
+  defp traverse_with(nil, _, result), do: result
+  defp traverse_with(%Combinator{match_type: :child, selector: s}, tree, stack) do
+    matches =
+      Enum.flat_map(stack, fn(html_node) ->
+        nodes = html_node.children_ids
+                |> Enum.reverse
+                |> get_nodes(tree)
+
+        Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
+      end)
+
+    # Here we are saying that the next stack is what was founded,
+    # and the next find should be an combinator withing that findings.
+    # Be awere that the other types of combinators.
+    traverse_with(s.combinator, tree, matches)
   end
 end

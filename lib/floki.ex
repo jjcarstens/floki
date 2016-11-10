@@ -143,10 +143,10 @@ defmodule Floki do
   @spec find(binary | html_tree, binary) :: html_tree
 
   def find(html, selector) when is_binary(html) do
-    html |> parse |> Finder.find(selector)
+    html |> parse |> Floki.FinderPoc.find(selector)
   end
   def find(html_tree, selector) do
-    Finder.find(html_tree, selector)
+    Floki.FinderPoc.find(html_tree, selector)
   end
 
   def transform(html_tree_list, transformation) when is_list(html_tree_list) do
