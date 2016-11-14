@@ -1,7 +1,7 @@
 defmodule FlokiTest do
   use ExUnit.Case, async: true
 
-  # doctest Floki
+  doctest Floki
 
   @html """
   <html>

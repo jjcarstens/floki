@@ -1,6 +1,6 @@
 defmodule Floki.FinderPoc do
   alias Floki.{Combinator, Selector, SelectorParser, SelectorTokenizer}
-  alias Floki.{IdsSeeder, HTMLTree, HTMLNode, HTMLText}
+  alias Floki.{IdsSeeder, HTMLTree, HTMLNode}
 
   def find(html_as_string, _) when is_binary(html_as_string), do: []
   def find([], _), do: []
@@ -15,7 +15,7 @@ defmodule Floki.FinderPoc do
     find_selectors(html_tree, [selector])
   end
 
-  defp find_selectors(html_tuple_or_list, [selector | _selectors]) do
+  defp find_selectors(html_tuple_or_list, selectors) do
     {:ok, pid} = IdsSeeder.start_link
 
     html_tree = HTMLTree.parse(html_tuple_or_list, pid)
@@ -24,7 +24,7 @@ defmodule Floki.FinderPoc do
 
     ids
     |> get_nodes(html_tree.tree)
-    |> Enum.flat_map(fn(html_node) -> get_matches(html_tree.tree, html_node, selector, ids) end)
+    |> Enum.flat_map(fn(html_node) -> Enum.flat_map(selectors, fn(selector) -> get_matches(html_tree.tree, html_node, selector, ids) end) end)
     |> Enum.map(fn(html_node) -> HTMLNode.as_tuple(html_tree, html_node) end)
   end
 
@@ -82,10 +82,9 @@ defmodule Floki.FinderPoc do
   defp traverse_with(%Combinator{match_type: :sibling, selector: s}, tree, stack, ids) do
     matches =
       Enum.flat_map(stack, fn(html_node) ->
-        sibling_id = get_siblings(html_node, tree)
-                     |> Enum.slice(1, 1)
-
         # It treats sibling as list to easily ignores those that didn't match
+        sibling_id = get_siblings(html_node, tree) |> Enum.take(1)
+
         nodes = get_nodes(sibling_id, tree)
 
         # Finally, try to match those siblings with the selector
@@ -136,15 +135,20 @@ defmodule Floki.FinderPoc do
 
   defp get_siblings(html_node, tree) do
     parent = get_node(html_node.floki_parent_id, tree)
-    [_html_node_id | sibling_ids] = parent.children_ids
-                                    |> Enum.reverse
-                                    |> Enum.drop_while(fn(id) -> id != html_node.floki_id end)
-    sibling_ids
+
+    if parent do
+      [_html_node_id | sibling_ids] = parent.children_ids
+                                      |> Enum.reverse
+                                      |> Enum.drop_while(fn(id) -> id != html_node.floki_id end)
+      sibling_ids
+    else
+      []
+    end
   end
 
   # It takes all ids until the next sibling, that represents the ids under a given sub-tree
   defp get_ids_for_decendant_match(floki_id, sibling_ids, ids) do
-    [floki_id|ids_after] = Enum.drop_while(ids, fn(id) -> id != floki_id end)
+    [_|ids_after] = Enum.drop_while(ids, fn(id) -> id != floki_id end)
 
     case sibling_ids do
       [] -> ids_after
