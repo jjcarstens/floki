@@ -2,6 +2,8 @@ defmodule Floki.FinderPoc do
   alias Floki.{Combinator, Selector, SelectorParser, SelectorTokenizer}
   alias Floki.{IdsSeeder, HTMLTree, HTMLNode, HTMLText}
 
+  def find(html_as_string, _) when is_binary(html_as_string), do: []
+  def find([], _), do: []
   def find(html_tree, selector_as_string) when is_binary(selector_as_string) do
     selectors = get_selectors(selector_as_string)
     find_selectors(html_tree, selectors)
