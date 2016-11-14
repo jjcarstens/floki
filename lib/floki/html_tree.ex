@@ -1,5 +1,5 @@
 defmodule Floki.HTMLTree do
-  defstruct tree: %{}, root_id: ""
+  defstruct tree: %{}, root_ids: []
 
   alias Floki.{HTMLNode, HTMLTree, TextNode, IdsSeeder}
 
@@ -7,14 +7,28 @@ defmodule Floki.HTMLTree do
     defstruct parent_node_id: nil, children: []
   end
 
-  def parse(html_tree_as_tuple, ids_seeder_pid) do
-    root_id = IdsSeeder.seed(ids_seeder_pid)
+  def parse(html_as_list, ids_seeder_pid) when is_list(html_as_list) do
+    reducer = fn
+      ({tag, attrs, children}, tree) ->
+        root_id = IdsSeeder.seed(ids_seeder_pid)
 
-    {tag, attrs, children} = html_tree_as_tuple
+        root_node = %HTMLNode{type: tag, attributes: attrs, floki_id: root_id}
+        nodes_tree = Map.put(tree.tree, root_id, root_node)
+        new_tree = %{tree | tree: nodes_tree, root_ids: [root_id | tree.root_ids]}
+        parse_tree(new_tree, children, root_id, [], ids_seeder_pid)
+      (_, tree) ->
+        tree
+    end
+
+    Enum.reduce(html_as_list, %HTMLTree{}, reducer)
+  end
+
+  def parse({tag, attrs, children}, ids_seeder_pid) do
+    root_id = IdsSeeder.seed(ids_seeder_pid)
 
     root_node = %HTMLNode{type: tag, attributes: attrs, floki_id: root_id}
     tree = %HTMLTree{
-      root_id: root_id,
+      root_ids: [root_id],
       tree: %{
         root_id => root_node
       }
