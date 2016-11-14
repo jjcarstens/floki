@@ -16,7 +16,7 @@ defmodule Floki.IdsSeeder do
   ## GenServer API
 
   def handle_call(:seed, _from, state) do
-    new_id = :crypto.strong_rand_bytes(8) |> Base.encode64
+    new_id = :crypto.strong_rand_bytes(4) |> Base.encode16
 
     {:reply, new_id, [new_id | state]}
   end
