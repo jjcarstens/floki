@@ -40,6 +40,10 @@ defmodule Floki.FinderPoc do
     Enum.map(ids, fn(id) -> Map.get(tree, id) end)
   end
 
+  defp get_node(id, tree) do
+    Map.get(tree, id)
+  end
+
   defp get_matches(_tree, html_node, selector = %Selector{combinator: nil}) do
     if Selector.match?(html_node, selector) do
       [html_node]
@@ -75,9 +79,49 @@ defmodule Floki.FinderPoc do
         Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
       end)
 
-    # Here we are saying that the next stack is what was founded,
-    # and the next find should be an combinator withing that findings.
+    # Here we are saying that the next stack is what was found,
+    # and the next find should be a combinator withing that findings.
     # Be awere that the other types of combinators.
+    traverse_with(s.combinator, tree, matches)
+  end
+
+  defp traverse_with(%Combinator{match_type: :sibling, selector: s}, tree, stack) do
+    matches =
+      Enum.flat_map(stack, fn(html_node) ->
+        # First take the parent node
+        parent = get_node(html_node.floki_parent_id, tree)
+        # Then take the sibling id as list
+        sibling_id = parent.children_ids
+                     |> Enum.reverse
+                     |> Enum.drop_while(fn(id) -> id != html_node.floki_id end)
+                     |> Enum.slice(1, 1)
+
+        # It treats sibling as list to easily ignores those that didn't match
+        nodes = get_nodes(sibling_id, tree)
+
+        # Finally, try to match those siblings with the selector
+        Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
+      end)
+
+    traverse_with(s.combinator, tree, matches)
+  end
+
+  defp traverse_with(%Combinator{match_type: :general_sibling, selector: s}, tree, stack) do
+    matches =
+      Enum.flat_map(stack, fn(html_node) ->
+        # First take the parent node
+        parent = get_node(html_node.floki_parent_id, tree)
+        # Then take the sibling id as list
+        [_ | sibling_ids] = parent.children_ids
+                           |> Enum.reverse
+                           |> Enum.drop_while(fn(id) -> id != html_node.floki_id end)
+
+        nodes = get_nodes(sibling_ids, tree)
+
+        # Finally, try to match those siblings with the selector
+        Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
+      end)
+
     traverse_with(s.combinator, tree, matches)
   end
 end
