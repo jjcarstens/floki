@@ -1,6 +1,6 @@
 defmodule Floki.FinderPoc do
   alias Floki.{Combinator, Selector, SelectorParser, SelectorTokenizer}
-  alias Floki.{IdsSeeder, HTMLTree, HTMLNode}
+  alias Floki.{HTMLTree, HTMLNode}
 
   def find(html_as_string, _) when is_binary(html_as_string), do: []
   def find([], _), do: []
@@ -16,15 +16,12 @@ defmodule Floki.FinderPoc do
   end
 
   defp find_selectors(html_tuple_or_list, selectors) do
-    {:ok, pid} = IdsSeeder.start_link
+    html_tree = HTMLTree.parse(html_tuple_or_list)
 
-    html_tree = HTMLTree.parse(html_tuple_or_list, pid)
-    ids = IdsSeeder.ids(pid)
-    GenServer.stop(pid)
-
-    ids
-    |> get_nodes(html_tree.tree)
-    |> Enum.flat_map(fn(html_node) -> Enum.flat_map(selectors, fn(selector) -> get_matches(html_tree.tree, html_node, selector, ids) end) end)
+    html_tree.ids
+    |> Enum.reverse
+    |> get_nodes(html_tree)
+    |> Enum.flat_map(fn(html_node) -> Enum.flat_map(selectors, fn(selector) -> get_matches(html_tree, html_node, selector) end) end)
     |> Enum.map(fn(html_node) -> HTMLNode.as_tuple(html_tree, html_node) end)
   end
 
@@ -38,7 +35,7 @@ defmodule Floki.FinderPoc do
     end)
   end
 
-  defp get_matches(_tree, html_node, selector = %Selector{combinator: nil}, _ids) do
+  defp get_matches(_tree, html_node, selector = %Selector{combinator: nil}) do
     if Selector.match?(html_node, selector) do
       [html_node]
     else
@@ -47,9 +44,9 @@ defmodule Floki.FinderPoc do
   end
 
   # This needs to be recursive taking the html_node as the base
-  defp get_matches(tree, html_node, selector = %Selector{combinator: combinator}, ids) do
+  defp get_matches(tree, html_node, selector = %Selector{combinator: combinator}) do
     if Selector.match?(html_node, selector) do
-      traverse_with(combinator, tree, [html_node], ids)
+      traverse_with(combinator, tree, [html_node])
     else
       []
     end
@@ -57,13 +54,9 @@ defmodule Floki.FinderPoc do
 
   # When stack is empty, and we have acc, we should ask if there is any other combinator
   # in combinator.selector.combinator.
-  # If so, we should search that too
-  # defp traverse_with(combinator, tree, parent_node, stack, acc) do
-  #  []
-  # end
-  defp traverse_with(_, _, [], _), do: []
-  defp traverse_with(nil, _, result, _), do: result
-  defp traverse_with(%Combinator{match_type: :child, selector: s}, tree, stack, ids) do
+  defp traverse_with(_, _, []), do: []
+  defp traverse_with(nil, _, result), do: result
+  defp traverse_with(%Combinator{match_type: :child, selector: s}, tree, stack) do
     matches =
       Enum.flat_map(stack, fn(html_node) ->
         nodes = html_node.children_ids
@@ -76,10 +69,10 @@ defmodule Floki.FinderPoc do
     # Here we are saying that the next stack is what was found,
     # and the next find should be a combinator withing that findings.
     # Be awere that the other types of combinators.
-    traverse_with(s.combinator, tree, matches, ids)
+    traverse_with(s.combinator, tree, matches)
   end
 
-  defp traverse_with(%Combinator{match_type: :sibling, selector: s}, tree, stack, ids) do
+  defp traverse_with(%Combinator{match_type: :sibling, selector: s}, tree, stack) do
     matches =
       Enum.flat_map(stack, fn(html_node) ->
         # It treats sibling as list to easily ignores those that didn't match
@@ -91,10 +84,10 @@ defmodule Floki.FinderPoc do
         Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
       end)
 
-    traverse_with(s.combinator, tree, matches, ids)
+    traverse_with(s.combinator, tree, matches)
   end
 
-  defp traverse_with(%Combinator{match_type: :general_sibling, selector: s}, tree, stack, ids) do
+  defp traverse_with(%Combinator{match_type: :general_sibling, selector: s}, tree, stack) do
     matches =
       Enum.flat_map(stack, fn(html_node) ->
         sibling_ids = get_siblings(html_node, tree)
@@ -105,14 +98,14 @@ defmodule Floki.FinderPoc do
         Enum.filter(nodes, fn(html_node) -> Selector.match?(html_node, s) end)
       end)
 
-    traverse_with(s.combinator, tree, matches, ids)
+    traverse_with(s.combinator, tree, matches)
   end
 
-  defp traverse_with(%Combinator{match_type: :descendant, selector: s}, tree, stack, ids) do
+  defp traverse_with(%Combinator{match_type: :descendant, selector: s}, tree, stack) do
     matches =
       Enum.flat_map(stack, fn(html_node) ->
         sibling_ids = get_siblings(html_node, tree)
-        ids_to_match = get_ids_for_decendant_match(html_node.floki_id, sibling_ids, ids)
+        ids_to_match = get_ids_for_decendant_match(html_node.floki_id, sibling_ids, tree.ids)
         nodes = ids_to_match
                 |> get_nodes(tree)
 
@@ -122,15 +115,15 @@ defmodule Floki.FinderPoc do
     # Here we are saying that the next stack is what was found,
     # and the next find should be a combinator withing that findings.
     # Be awere that the other types of combinators.
-    traverse_with(s.combinator, tree, matches, ids)
+    traverse_with(s.combinator, tree, matches)
   end
 
   defp get_nodes(ids, tree) do
-    Enum.map(ids, fn(id) -> Map.get(tree, id) end)
+    Enum.map(ids, fn(id) -> Map.get(tree.tree, id) end)
   end
 
   defp get_node(id, tree) do
-    Map.get(tree, id)
+    Map.get(tree.tree, id)
   end
 
   defp get_siblings(html_node, tree) do
@@ -148,11 +141,13 @@ defmodule Floki.FinderPoc do
 
   # It takes all ids until the next sibling, that represents the ids under a given sub-tree
   defp get_ids_for_decendant_match(floki_id, sibling_ids, ids) do
-    [_|ids_after] = Enum.drop_while(ids, fn(id) -> id != floki_id end)
+    [_ | ids_after] = ids
+                      |> Enum.reverse
+                      |> Enum.drop_while(fn(id) -> id != floki_id end)
 
     case sibling_ids do
       [] -> ids_after
-      [sibling_id|_] -> Enum.take_while(ids_after, fn(id) -> id != sibling_id end)
+      [sibling_id | _] -> Enum.take_while(ids_after, fn(id) -> id != sibling_id end)
     end
   end
 end
